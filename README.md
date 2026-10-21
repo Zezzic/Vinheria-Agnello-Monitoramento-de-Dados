@@ -15,9 +15,10 @@ Projeto acadêmico desenvolvido na FIAP (Engenharia de Software, disciplina Edge
 ## Visão Geral do Circuito
 
 > **Simulação disponível no Wokwi:**
-> [Acessar projeto](COLE_AQUI_O_LINK_DO_WOKWI)
+> [Acessar projeto](https://wokwi.com/projects/478367741497086977)
 
-<!-- COLE AQUI O PRINT DO CIRCUITO NO WOKWI -->
+<img width="888" height="560" alt="image" src="https://github.com/user-attachments/assets/62cdc576-f05f-43da-b046-fe4858683b17" />
+
 
 ### Arquitetura
 
@@ -124,12 +125,6 @@ Exemplo do JSON publicado em `.../dados`:
     2) Conecta no Wi-Fi e sincroniza a hora (NTP) para gerar timestamp
     3) Publica os dados via MQTT (topicos individuais + JSON completo)
     4) Escuta o topico de comando para ligar/desligar o LED (escrita via MyMQTT)
-
-  Ligacoes (iguais ao slide 10 do professor):
-    DHT11 DATA -> GPIO 4  (D4)
-    LDR        -> GPIO 34 (D34, entrada analogica)
-    LED1       -> GPIO 2  (D2)
-    VCC -> 3V3 | GND -> GND
 */
 
 #include <WiFi.h>
@@ -320,7 +315,7 @@ void loop() {
 
 Não é necessária nenhuma placa: basta um navegador e o aplicativo MyMQTT.
 
-1. Acesse o link da simulação: [Wokwi - Vinheria Agnello](COLE_AQUI_O_LINK_DO_WOKWI)
+1. Acesse o link da simulação: [Wokwi - Vinheria Agnello](https://wokwi.com/projects/478367741497086977)
 2. Clique no botão verde **Play** (▶) para iniciar.
 3. Acompanhe o **Monitor Serial** (parte inferior da tela). A saída esperada é:
 
@@ -398,7 +393,8 @@ Alerta: ...
 
 > O servidor é compartilhado com outras equipes. Use sempre o tópico completo do projeto em vez de assinar apenas `#`.
 
-<!-- COLE AQUI O PRINT DO MYMQTT -->
+<img width="788" height="1600" alt="image" src="https://github.com/user-attachments/assets/5823116f-4264-4566-8d71-00174fb80a97" />
+
 
 ### Resultado esperado
 
