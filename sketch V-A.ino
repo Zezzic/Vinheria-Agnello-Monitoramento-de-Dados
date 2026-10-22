@@ -11,7 +11,7 @@
   O que este codigo faz:
     1) Le temperatura e umidade (DHT11) e luminosidade (LDR)
     2) Conecta no Wi-Fi e sincroniza a hora (NTP) para gerar timestamp
-    3) Publica os dados via MQTT (topicos individuais + JSON completo)
+    3) Publica os dados via MQTT no servidor de IoT (device011)
     4) Escuta o topico de comando para ligar/desligar o LED (escrita via MyMQTT)
 */
 
@@ -21,28 +21,33 @@
 #include <time.h>
 
 #define USAR_WOKWI 1
+#define ENVIAR_TIMESTAMP 1
 
 #if USAR_WOKWI
   const char* WIFI_SSID = "Wokwi-GUEST";
   const char* WIFI_PASS = "";
+  const int   WIFI_CANAL = 6;
   #define DHTTYPE DHT22
 #else
-  const char* WIFI_SSID = "NOME_DA_REDE_WIFI";
+  const char* WIFI_SSID = "FIAP-IOT";
   const char* WIFI_PASS = "SENHA_DA_REDE";
+  const int   WIFI_CANAL = 0;
   #define DHTTYPE DHT11
 #endif
 
-const char*    MQTT_BROKER = "3.135.234.101";
-const uint16_t MQTT_PORT   = 1883;
+const char* MQTT_BROKER = "3.135.234.101";
+const int   MQTT_PORT   = 1883;
 
-const String BASE         = "fiap/devx/vinheria-agnello/adega01";
-const String T_TEMP       = BASE + "/temperatura";
-const String T_UMID       = BASE + "/umidade";
-const String T_LUM        = BASE + "/luminosidade";
-const String T_JSON       = BASE + "/dados";
-const String T_ALERTA     = BASE + "/alerta";
-const String T_LED_CMD    = BASE + "/led/cmd";
-const String T_LED_STATE  = BASE + "/led/estado";
+const char* TOPICO_SUBSCRIBE    = "/TEF/device011/cmd";
+const char* TOPICO_TELEMETRIA   = "/TEF/device011/attrs";
+const char* TOPICO_LUMINOSIDADE = "/TEF/device011/attrs/p";
+const char* TOPICO_ESTADO_LED   = "/TEF/device011/attrs/s";
+const char* TOPICO_TEMPERATURA  = "/TEF/device011/attrs/t";
+const char* TOPICO_UMIDADE      = "/TEF/device011/attrs/h";
+const char* TOPICO_ALERTA       = "/TEF/device011/attrs/a";
+
+const char* CMD_LIGAR    = "device011@on|";
+const char* CMD_DESLIGAR = "device011@off|";
 
 const int PIN_DHT = 4;
 const int PIN_LDR = 34;
@@ -50,148 +55,219 @@ const int PIN_LED = 2;
 
 const bool LDR_INVERTIDO = false;
 
-const unsigned long INTERVALO_MS = 5000;
+const unsigned long INTERVALO_MS = 2000;
 
 DHT dht(PIN_DHT, DHTTYPE);
 WiFiClient espClient;
-PubSubClient mqtt(espClient);
+PubSubClient MQTT(espClient);
 
 unsigned long ultimaLeitura = 0;
-unsigned long ultimaTentativaMqtt = 0;
+bool ledLigado = false;
 
-void conectaWiFi() {
-  Serial.print("Conectando ao Wi-Fi ");
-  Serial.print(WIFI_SSID);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(400);
-    Serial.print(".");
+void initSerial() {
+  Serial.begin(115200);
+}
+
+void initOutput() {
+  pinMode(PIN_LED, OUTPUT);
+  bool nivel = false;
+  for (int i = 0; i <= 10; i++) {
+    nivel = !nivel;
+    digitalWrite(PIN_LED, nivel);
+    delay(200);
   }
-  Serial.print("\nWi-Fi conectado. IP: ");
+  digitalWrite(PIN_LED, LOW);
+  ledLigado = false;
+}
+
+void reconectWiFi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS, WIFI_CANAL);
+  unsigned long inicio = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(100);
+    Serial.print(".");
+    if (millis() - inicio > 15000) {
+      Serial.println();
+      Serial.println("Sem resposta do Wi-Fi. Tentando novamente...");
+      WiFi.disconnect();
+      delay(500);
+      WiFi.begin(WIFI_SSID, WIFI_PASS, WIFI_CANAL);
+      inicio = millis();
+    }
+  }
+  Serial.println();
+  Serial.print("Conectado com sucesso na rede ");
+  Serial.println(WIFI_SSID);
+  Serial.print("IP obtido: ");
   Serial.println(WiFi.localIP());
 }
 
+void initWiFi() {
+  delay(10);
+  Serial.println("------Conexao WI-FI------");
+  Serial.print("Conectando-se na rede: ");
+  Serial.println(WIFI_SSID);
+  Serial.println("Aguarde");
+  reconectWiFi();
+}
+
 String timestamp() {
+  time_t agora = time(nullptr);
+  if (agora < 1700000000) return "sem-hora";
   struct tm t;
-  if (!getLocalTime(&t, 2000)) return "sem-hora";
+  localtime_r(&agora, &t);
   char buf[32];
   strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S-03:00", &t);
   return String(buf);
 }
 
-void setLed(bool ligado) {
-  digitalWrite(PIN_LED, ligado ? HIGH : LOW);
-  mqtt.publish(T_LED_STATE.c_str(), ligado ? "on" : "off", true);
-  Serial.println(ligado ? "LED ligado via MQTT" : "LED desligado via MQTT");
+void publicaEstadoLed() {
+  MQTT.publish(TOPICO_ESTADO_LED, ledLigado ? "on" : "off");
 }
 
-void callback(char* topic, byte* payload, unsigned int length) {
-  String msg;
-  for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
-  msg.trim();
-  msg.toLowerCase();
+void mqtt_callback(char* topic, byte* payload, unsigned int length) {
+  char msg[length + 1];
+  memcpy(msg, payload, length);
+  msg[length] = '\0';
 
-  Serial.print("Mensagem recebida [");
-  Serial.print(topic);
-  Serial.print("]: ");
-  Serial.println(msg);
+  int fim = length;
+  while (fim > 0 && (msg[fim - 1] == ' ' || msg[fim - 1] == '\r' || msg[fim - 1] == '\n')) {
+    msg[--fim] = '\0';
+  }
 
-  if (String(topic) == T_LED_CMD) {
-    if (msg == "on" || msg == "1" || msg == "ligar")          setLed(true);
-    else if (msg == "off" || msg == "0" || msg == "desligar") setLed(false);
+  Serial.printf("- Comando recebido no tópico %s: %s\n", topic, msg);
+
+  if (strcmp(msg, CMD_LIGAR) == 0) {
+    digitalWrite(PIN_LED, HIGH);
+    ledLigado = true;
+    Serial.println("- Ação: LED LIGADO");
+    publicaEstadoLed();
+  } else if (strcmp(msg, CMD_DESLIGAR) == 0) {
+    digitalWrite(PIN_LED, LOW);
+    ledLigado = false;
+    Serial.println("- Ação: LED DESLIGADO");
+    publicaEstadoLed();
+  } else {
+    Serial.println("- Ação: comando não reconhecido. Ignorado.");
   }
 }
 
-bool reconectaMqtt() {
-  String clientId = "esp32-agnello-" + String((uint32_t)ESP.getEfuseMac(), HEX);
-  Serial.print("Conectando ao broker MQTT... ");
-  if (mqtt.connect(clientId.c_str())) {
-    Serial.println("conectado!");
-    mqtt.subscribe(T_LED_CMD.c_str());
-    mqtt.publish(T_ALERTA.c_str(), "Sistema online", true);
-    return true;
-  }
-  Serial.println("nao foi possivel conectar ao servidor. Tentando de novo em 5 segundos...");
-  return false;
+void initMQTT() {
+  MQTT.setServer(MQTT_BROKER, MQTT_PORT);
+  MQTT.setCallback(mqtt_callback);
+  MQTT.setBufferSize(512);
 }
 
-int leLuminosidadeRaw() {
+void reconnectMQTT() {
+  while (!MQTT.connected()) {
+    Serial.print("* Tentando se conectar ao Broker MQTT: ");
+    Serial.println(MQTT_BROKER);
+
+    char clientId[32];
+    snprintf(clientId, sizeof(clientId), "fiware_011_%04X", (unsigned int)random(0xffff));
+
+    if (MQTT.connect(clientId)) {
+      Serial.println("Conectado com sucesso ao broker MQTT!");
+      MQTT.subscribe(TOPICO_SUBSCRIBE);
+      publicaEstadoLed();
+    } else {
+      Serial.println("Falha ao conectar no broker.");
+      Serial.println("Haverá nova tentativa de conexão em 2s");
+      delay(2000);
+    }
+  }
+}
+
+void verificaConexoes() {
+  reconectWiFi();
+  if (!MQTT.connected()) reconnectMQTT();
+}
+
+int leLuminosidade() {
   long soma = 0;
   for (int i = 0; i < 10; i++) {
     soma += analogRead(PIN_LDR);
     delay(5);
   }
-  return soma / 10;
+  int valor = map(soma / 10, 0, 4095, 0, 100);
+  if (LDR_INVERTIDO) valor = 100 - valor;
+  return valor;
 }
 
 void publicaLeituras() {
-  float temp = dht.readTemperature();
-  float umid = dht.readHumidity();
+  int lum = leLuminosidade();
+  char msgLum[8];
+  snprintf(msgLum, sizeof(msgLum), "%d", lum);
+  MQTT.publish(TOPICO_LUMINOSIDADE, msgLum);
+  Serial.print("Valor da luminosidade: ");
+  Serial.println(msgLum);
 
-  if (isnan(temp) || isnan(umid)) {
-    Serial.println("Falha ao ler o DHT. Verifique a ligacao no D4.");
-    mqtt.publish(T_ALERTA.c_str(), "Falha na leitura do DHT");
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+
+  if (isnan(t) || isnan(h)) {
+    Serial.println("Falha ao ler o DHT! Verifique a ligação no pino D4.");
     return;
   }
 
-  int raw = leLuminosidadeRaw();
-  int lum = map(raw, 0, 4095, 0, 100);
-  if (LDR_INVERTIDO) lum = 100 - lum;
-
-  String ts = timestamp();
-
-  mqtt.publish(T_TEMP.c_str(), String(temp, 1).c_str());
-  mqtt.publish(T_UMID.c_str(), String(umid, 1).c_str());
-  mqtt.publish(T_LUM.c_str(),  String(lum).c_str());
-
-  char json[256];
+  char json[160];
+#if ENVIAR_TIMESTAMP
   snprintf(json, sizeof(json),
-           "{\"timestamp\":\"%s\",\"temperatura\":%.1f,\"umidade\":%.1f,"
-           "\"luminosidade\":%d,\"luminosidade_raw\":%d}",
-           ts.c_str(), temp, umid, lum, raw);
-  mqtt.publish(T_JSON.c_str(), json);
+           "{\"temperatura\":%.1f,\"umidade\":%.1f,\"timestamp\":\"%s\"}",
+           t, h, timestamp().c_str());
+#else
+  snprintf(json, sizeof(json),
+           "{\"temperatura\":%.1f,\"umidade\":%.1f}", t, h);
+#endif
+
+  if (MQTT.publish(TOPICO_TELEMETRIA, json)) {
+    Serial.printf("Publicado: %s\n", json);
+  } else {
+    Serial.println("Falha ao publicar.");
+  }
+
+  char msgT[12];
+  char msgH[12];
+  snprintf(msgT, sizeof(msgT), "%.1f", t);
+  snprintf(msgH, sizeof(msgH), "%.1f", h);
+  MQTT.publish(TOPICO_TEMPERATURA, msgT);
+  MQTT.publish(TOPICO_UMIDADE, msgH);
+  Serial.print("Temperatura: ");
+  Serial.print(msgT);
+  Serial.print(" C | Umidade: ");
+  Serial.print(msgH);
+  Serial.println(" %");
 
   String alerta = "";
-  if (temp > 16.0 || temp < 10.0) alerta += "Temperatura fora de 10-16C. ";
-  if (umid < 60.0 || umid > 80.0) alerta += "Umidade fora de 60-80%. ";
-  if (lum > 30)                   alerta += "Ambiente muito claro. ";
-  if (alerta == "") alerta = "Condicoes ideais";
-  mqtt.publish(T_ALERTA.c_str(), alerta.c_str());
-
-  Serial.println(json);
+  if (t > 16.0)      alerta += "Temperatura ALTA. ";
+  else if (t < 10.0) alerta += "Temperatura BAIXA. ";
+  if (h > 80.0)      alerta += "Umidade ALTA. ";
+  else if (h < 60.0) alerta += "Umidade BAIXA. ";
+  if (lum > 30)      alerta += "Ambiente muito claro. ";
+  if (alerta == "") alerta = "Condições ideais";
+  MQTT.publish(TOPICO_ALERTA, alerta.c_str());
   Serial.println("Alerta: " + alerta);
 }
 
 void setup() {
-  Serial.begin(115200);
-  pinMode(PIN_LED, OUTPUT);
-  digitalWrite(PIN_LED, LOW);
-  analogReadResolution(12);
-
+  initSerial();
   dht.begin();
-  conectaWiFi();
-
+  analogReadResolution(12);
+  initOutput();
+  initWiFi();
   configTime(-3 * 3600, 0, "pool.ntp.org", "time.google.com");
-
-  mqtt.setServer(MQTT_BROKER, MQTT_PORT);
-  mqtt.setCallback(callback);
-  mqtt.setBufferSize(512);
+  initMQTT();
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) conectaWiFi();
+  verificaConexoes();
+  MQTT.loop();
 
-  if (!mqtt.connected()) {
-    if (millis() - ultimaTentativaMqtt > 5000) {
-      ultimaTentativaMqtt = millis();
-      reconectaMqtt();
-    }
-  } else {
-    mqtt.loop();
-    if (millis() - ultimaLeitura >= INTERVALO_MS) {
-      ultimaLeitura = millis();
-      publicaLeituras();
-    }
+  unsigned long agora = millis();
+  if (agora - ultimaLeitura >= INTERVALO_MS) {
+    ultimaLeitura = agora;
+    publicaLeituras();
   }
 }
