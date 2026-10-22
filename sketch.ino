@@ -215,11 +215,11 @@ void publicaLeituras() {
   char json[160];
 #if ENVIAR_TIMESTAMP
   snprintf(json, sizeof(json),
-           "{\"temperatura\":%.1f,\"umidade\":%.1f,\"timestamp\":\"%s\"}",
-           t, h, timestamp().c_str());
+           "{\"temperatura\":%.1f,\"umidade\":%.1f,\"luminosidade\":%d,\"timestamp\":\"%s\"}",
+           t, h, lum, timestamp().c_str());
 #else
   snprintf(json, sizeof(json),
-           "{\"temperatura\":%.1f,\"umidade\":%.1f}", t, h);
+           "{\"temperatura\":%.1f,\"umidade\":%.1f,\"luminosidade\":%d}", t, h, lum);
 #endif
 
   if (MQTT.publish(TOPICO_TELEMETRIA, json)) {
