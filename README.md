@@ -17,7 +17,8 @@ Projeto acadêmico desenvolvido na FIAP (Engenharia de Software, disciplina Edge
 > **Simulação disponível no Wokwi:**
 > [Acessar projeto](https://wokwi.com/projects/478367741497086977)
 
-<!-- COLE AQUI O PRINT DO CIRCUITO NO WOKWI -->
+<img width="915" height="715" alt="image" src="https://github.com/user-attachments/assets/6550aa1b-aa1e-4ccf-b9e9-cb7639930f1b" />
+
 
 ### Arquitetura
 
@@ -488,7 +489,8 @@ Ao iniciar, o LED pisca por cerca de 2 segundos (teste de saída) e a conexão c
 
 > O servidor é compartilhado com outras equipes, cada uma com o seu dispositivo. Use sempre o tópico completo do `device011` em vez de assinar apenas `#`.
 
-<!-- COLE AQUI O PRINT DO MYMQTT -->
+<img width="796" height="1600" alt="image" src="https://github.com/user-attachments/assets/93fe5955-669d-4f89-b4a7-c6c2aab0b30b" />
+
 
 ### Resultado esperado
 
