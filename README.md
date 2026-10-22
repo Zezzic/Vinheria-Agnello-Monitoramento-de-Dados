@@ -129,21 +129,11 @@ Exemplo do JSON publicado em `/TEF/device011/attrs`:
     Lucas Zezzi Custodio   / RM: 571161
     Romulo Mendes Sousa    / RM: 570620
 
-  Codigo adaptado dos exemplos fornecidos na disciplina (Prof. Lucas Demetrius
-  Augusto, com base no codigo de Fabio Henrique Cabrini), no padrao de topicos
-  do FIWARE (/TEF/<device>/attrs, /attrs/p e /cmd).
-
   O que este codigo faz:
     1) Le temperatura e umidade (DHT11) e luminosidade (LDR)
     2) Conecta no Wi-Fi e sincroniza a hora (NTP) para gerar timestamp
     3) Publica os dados via MQTT no servidor de IoT (device011)
     4) Escuta o topico de comando para ligar/desligar o LED (escrita via MyMQTT)
-
-  Ligacoes (iguais ao slide 10 do professor):
-    DHT11 DATA -> GPIO 4  (D4)
-    LDR        -> GPIO 34 (D34, entrada analogica)
-    LED1       -> GPIO 2  (D2)
-    VCC -> 3V3 | GND -> GND
 */
 
 #include <WiFi.h>
