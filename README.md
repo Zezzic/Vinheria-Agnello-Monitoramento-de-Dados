@@ -40,9 +40,9 @@ Projeto acadêmico desenvolvido na FIAP (Engenharia de Software, disciplina Edge
 
 - **Leitura de temperatura e umidade:** sensor DHT11 no pino D4.
 - **Leitura de luminosidade:** LDR no pino analógico D34, com média de 10 amostras convertida para porcentagem (0 a 100).
-- **Timestamp:** hora sincronizada por NTP (fuso UTC-3), enviada em formato ISO 8601 junto com temperatura e umidade.
+- **Timestamp:** hora sincronizada por NTP (fuso UTC-3), enviada em formato ISO 8601 junto com temperatura, umidade e luminosidade no mesmo JSON.
 - **Comunicação Wi-Fi:** ESP32 em modo estação, com reconexão automática.
-- **Publicação MQTT:** padrão de tópicos do FIWARE (`/TEF/<device>/attrs`), com JSON para temperatura e umidade e valor simples para a luminosidade.
+- **Publicação MQTT:** padrão de tópicos do FIWARE (`/TEF/<device>/attrs`), com JSON completo (temperatura, umidade, luminosidade e timestamp) e tópicos individuais para cada valor.
 - **Escrita via MQTT:** o ESP32 assina o tópico de comando e controla o LED conforme os comandos recebidos, informando o estado em um tópico próprio.
 - **Alertas legíveis:** mensagem de alerta a cada ciclo, com base nas faixas ideais de conservação do vinho, exibida no Serial Monitor e publicada em tópico próprio para leitura no MyMQTT.
 - **Reconexão automática:** Wi-Fi e broker MQTT são reconectados sem intervenção, com avisos no Serial Monitor.
@@ -90,8 +90,8 @@ A cada ciclo, o ESP32 compara as leituras com as faixas ideais de conservação,
 
 | Tópico | Direção | Conteúdo |
 | :--- | :--- | :--- |
-| `/TEF/device011/attrs` | ESP32 publica | JSON com temperatura, umidade e timestamp |
-| `/TEF/device011/attrs/p` | ESP32 publica | Luminosidade em % |
+| `/TEF/device011/attrs` | ESP32 publica | JSON com temperatura, umidade, luminosidade e timestamp |
+| `/TEF/device011/attrs/p` | ESP32 publica | Luminosidade em % (valor isolado) |
 | `/TEF/device011/attrs/t` | ESP32 publica | Temperatura em °C |
 | `/TEF/device011/attrs/h` | ESP32 publica | Umidade em % |
 | `/TEF/device011/attrs/a` | ESP32 publica | Mensagem de alerta (por exemplo, `Condições ideais`) |
@@ -101,7 +101,7 @@ A cada ciclo, o ESP32 compara as leituras com as faixas ideais de conservação,
 Exemplo do JSON publicado em `/TEF/device011/attrs`:
 
 ```json
-{"temperatura":22.5,"umidade":61.0,"timestamp":"2026-10-22T14:30:05-03:00"}
+{"temperatura":22.5,"umidade":61.0,"luminosidade":35,"timestamp":"2026-10-22T14:30:05-03:00"}
 ```
 
 ### Configurações do código
@@ -346,11 +346,11 @@ void publicaLeituras() {
   char json[160];
 #if ENVIAR_TIMESTAMP
   snprintf(json, sizeof(json),
-           "{\"temperatura\":%.1f,\"umidade\":%.1f,\"timestamp\":\"%s\"}",
-           t, h, timestamp().c_str());
+           "{\"temperatura\":%.1f,\"umidade\":%.1f,\"luminosidade\":%d,\"timestamp\":\"%s\"}",
+           t, h, lum, timestamp().c_str());
 #else
   snprintf(json, sizeof(json),
-           "{\"temperatura\":%.1f,\"umidade\":%.1f}", t, h);
+           "{\"temperatura\":%.1f,\"umidade\":%.1f,\"luminosidade\":%d}", t, h, lum);
 #endif
 
   if (MQTT.publish(TOPICO_TELEMETRIA, json)) {
@@ -424,7 +424,7 @@ IP obtido: ...
 * Tentando se conectar ao Broker MQTT: 3.135.234.101
 Conectado com sucesso ao broker MQTT!
 Valor da luminosidade: 50
-Publicado: {"temperatura":24.0,"umidade":40.0,"timestamp":"2026-10-22T14:30:05-03:00"}
+Publicado: {"temperatura":24.0,"umidade":40.0,"luminosidade":50,"timestamp":"2026-10-22T14:30:05-03:00"}
 Temperatura: 24.0 C | Umidade: 40.0 %
 Alerta: Temperatura ALTA. Umidade BAIXA. Ambiente muito claro.
 ```
@@ -488,7 +488,7 @@ Ao iniciar, o LED pisca por cerca de 2 segundos (teste de saída) e a conexão c
 
 1. Abra a aba **Subscribe**.
 2. Assine `/TEF/device011/#`.
-3. Em até 2 segundos chegam o JSON (temperatura, umidade e timestamp), a temperatura (`/attrs/t`), a umidade (`/attrs/h`), a luminosidade (`/attrs/p`) e a mensagem de alerta (`/attrs/a`). O estado do LED (`/attrs/s`) é publicado quando o LED muda.
+3. Em até 2 segundos chegam o JSON (temperatura, umidade, luminosidade e timestamp), a temperatura (`/attrs/t`), a umidade (`/attrs/h`), a luminosidade (`/attrs/p`) e a mensagem de alerta (`/attrs/a`). O estado do LED (`/attrs/s`) é publicado quando o LED muda.
 
 **Escrita (Publish)**
 
